@@ -1,0 +1,6 @@
+Id,Item,IsComplete,CreatedDate
+0,Add text/SMS service,false,2026-08-30
+2,"Add forecast option (current, later, tomorrow, etc.)",false,2026-08-30
+3,Improve weather truncation,false,2026-08-30
+4,Test with additional phone numbers,false,2026-08-30
+5,Test via satellite,false,2026-08-30
