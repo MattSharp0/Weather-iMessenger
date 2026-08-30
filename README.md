@@ -126,8 +126,9 @@ iPhone (satellite) ⇄ iMessage ⇄ Sendblue ⇄ [Cloudflare Tunnel] ⇄ FastAPI
 ## Deployment notes
 
 - Designed to run on a home server/Pi behind a Cloudflare Tunnel (no inbound ports opened, TLS handled by Cloudflare).
-- Run under systemd so it survives a reboot; point the unit at `uv run uvicorn app.main:app --host 0.0.0.0 --port <port>`.
+- Run under systemd so it survives a reboot. Point `ExecStart` at the venv's own binary directly — `/path/to/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port <port>` — **not** `uv run uvicorn ...`. `uv run` re-validates the venv against `uv.lock` on every single invocation, so a `uv run`-based unit will silently try to reinstall/rebuild dependencies on every service restart, which is surprising behavior for something you expect to just start and stay running (and is a real problem if a dependency lacks a wheel for your platform — see the ARMv6 note below).
 - Sendblue's free tier uses a shared number — fine at this scale (a handful of verified senders); a dedicated line is $100/mo if you ever want guaranteed inbound-first delivery.
+- **If your webhook never seems to receive anything despite Sendblue showing the message in their own chat UI**, check Cloudflare's Security Events log and disable **Bot Fight Mode** (or review your WAF rules) for the hostname. It silently blocks Sendblue's server-to-server webhook POSTs as bot traffic while manual `curl`/browser testing keeps working fine — which makes it look like a Sendblue or app-side bug when it's actually Cloudflare dropping the request before it ever reaches your tunnel.
 
 **Running on a first-gen Raspberry Pi Zero (ARMv6)?** Both `uv`'s managed Python builds and `cloudflared`'s official releases only target ARMv7+/ARM64 — neither works out of the box on genuine ARMv6 (the Pi Zero 2 W is ARMv7 and unaffected by any of this). If you're on the original Zero:
 - **Python**: use the system-installed interpreter instead of letting `uv` try to download one (`requires-python = ">=3.11"` in `pyproject.toml` already reflects this — don't tighten it back to an exact 3.12 pin, since `uv python install` has no ARMv6 build to fetch).
