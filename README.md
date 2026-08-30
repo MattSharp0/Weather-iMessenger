@@ -1,6 +1,12 @@
 # Weather-Messenger
 
-Text your coordinates via iMessage (including over satellite, when off-grid) and get a short weather forecast back. Built for personal use — a handful of pre-approved numbers, no public signup.
+Text your coordinates via iMessage (including over satellite, when off-grid) and get a short weather forecast back. Built for personal use — a handful of pre-approved numbers, no public signup or self-serve onboarding.
+
+## Prerequisites
+
+- Python 3.12+ and [`uv`](https://docs.astral.sh/uv/)
+- A [Sendblue](https://sendblue.com) account (see "Why Sendblue" below) — the free tier works fine at this scale
+- Somewhere to run this that's reachable from the internet for the Sendblue webhook. A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) is the easiest no-port-forwarding option; a *named* tunnel (for a stable URL) needs a domain added to your Cloudflare account. A quick/anonymous tunnel works for initial testing but gets a new random URL on every restart and isn't reliable long-term — don't use it as your permanent webhook target.
 
 ## Setup
 
@@ -21,6 +27,7 @@ Text your coordinates via iMessage (including over satellite, when off-grid) and
    | `SENDBLUE_API_KEY` / `SENDBLUE_API_SECRET` | From your Sendblue account (used to send messages) |
    | `SENDBLUE_SIGNING_SECRET` | Shared secret you set in the Sendblue webhook config, checked on every incoming request |
    | `SENDBLUE_FROM_NUMBER` | Required on every send, even on the free/shared tier. Find yours via `GET https://api.sendblue.co/api/lines` with your API key/secret headers — it returns `{"numbers": ["+1..."]}` |
+   | `OTP_PEPPER` | Secret key used to HMAC-hash OTP codes before storing them. Generate one with `python3 -c "import secrets; print(secrets.token_hex(32))"` — treat it like any other secret, never reuse a value from an example. |
    | `DB_PATH` | Path to the SQLite file (default `weather_messenger.db`) |
    | `NWS_CONTACT` | Your email, sent as part of the required `User-Agent` on NWS API calls |
    | `OTP_TTL_MINUTES` | How long a verification code stays valid (default 15) |
@@ -102,9 +109,17 @@ iPhone (satellite) ⇄ iMessage ⇄ Sendblue ⇄ [Cloudflare Tunnel] ⇄ FastAPI
 **Schema** (`schema.sql`): three tables — `phone_numbers` (who's allowed to use this), `otp_codes` (verification codes, kept separate so re-issuing one doesn't touch the phone row), `messages` (full inbound/outbound log, including parsed coordinates, for history/debugging).
 
 **Security:**
-- Every webhook request is checked against `SENDBLUE_SIGNING_SECRET` (constant-time compare) — the only thing gating the public endpoint.
-- OTPs are stored as SHA-256 hashes, not plaintext, expire in 15 minutes, and are single-use.
+- Every webhook request is checked against `SENDBLUE_SIGNING_SECRET` (constant-time compare) — the only auth gating the public endpoint. It's rejected before the body is even parsed.
+- OTPs are stored as HMAC-SHA256 hashes keyed with `OTP_PEPPER` (not bare hashes — a 6-digit code is only 1M possible values, cheap to precompute against an unkeyed hash if the DB file ever leaked), expire in 15 minutes, and are single-use.
 - Verification is entirely CLI-side (`verify-number`) — the public webhook never verifies a number, it only serves already-verified ones. Unregistered *and* unverified numbers both get silently ignored, so the endpoint doesn't leak that it exists or hint at its verification state.
+- FastAPI's auto-generated docs (`/docs`, `/redoc`, `/openapi.json`) are disabled — they're separate routes that would otherwise bypass the webhook's own auth and expose the API schema to anyone who finds the URL.
+- All DB writes use parameterized queries; nothing user-supplied is ever interpolated into SQL.
+
+**Limitations (know these before self-hosting):**
+- No rate limiting on the webhook. In practice it's gated by the shared signing secret (Sendblue is the only party that can produce a valid one) rather than app-level throttling — acceptable for a personal-scale bot, not for anything higher-traffic.
+- Single-tenant by design: there's no user/org model, just a flat list of phone numbers one admin controls via the CLI. Don't expose the CLI or the SQLite file to anyone you don't want able to add/revoke numbers.
+- `.env` and the SQLite file (which contains phone numbers and OTP hashes) aren't given special filesystem permissions beyond your umask — `chmod 600` both if you're on a shared machine.
+- No license file yet — add one (MIT, Apache-2.0, etc.) before treating this as usable by others; without one, default copyright applies and technically no one else has permission to use it despite the repo being public.
 
 **Known open item:** Sendblue's own docs/blog examples disagree on the exact *incoming webhook* payload field names (`from_number` vs `number`). `sendblue.extract_incoming()` checks both, but this should be confirmed against your first real incoming webhook — worth logging the raw payload once and double-checking. (Separately, on the *outgoing* send call, `from_number` turned out to be required even on the free/shared tier despite docs suggesting otherwise — already fixed, see `SENDBLUE_FROM_NUMBER` above. Also note real Sendblue API calls can take ~20s, so `sendblue.send_message()` uses a 45s timeout, not a short one.)
 

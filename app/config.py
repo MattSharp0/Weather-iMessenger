@@ -20,6 +20,7 @@ class Config:
     sendblue_api_secret: str
     sendblue_signing_secret: str
     sendblue_from_number: str
+    otp_pepper: str
     db_path: Path
     nws_contact: str
     otp_ttl_minutes: int
@@ -31,6 +32,7 @@ def load_config() -> Config:
         sendblue_api_secret=_require("SENDBLUE_API_SECRET"),
         sendblue_signing_secret=_require("SENDBLUE_SIGNING_SECRET"),
         sendblue_from_number=_require("SENDBLUE_FROM_NUMBER"),
+        otp_pepper=_require("OTP_PEPPER"),
         db_path=Path(os.environ.get("DB_PATH", "weather_messenger.db")),
         nws_contact=_require("NWS_CONTACT"),
         otp_ttl_minutes=int(os.environ.get("OTP_TTL_MINUTES", "15")),

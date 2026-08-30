@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -6,7 +7,7 @@ from app.config import config
 
 
 def _hash_code(code: str) -> str:
-    return hashlib.sha256(code.encode()).hexdigest()
+    return hmac.new(config.otp_pepper.encode(), code.encode(), hashlib.sha256).hexdigest()
 
 
 def generate_code() -> tuple[str, str, str]:
