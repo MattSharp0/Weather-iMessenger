@@ -14,6 +14,7 @@ uv run pytest                              # run all tests
 uv run pytest tests/test_parsing.py::test_comma_separated   # run a single test
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000       # run the server locally
 uv run python cli.py <command>             # admin CLI — see cli.py or README for subcommands
+uv run python scripts/simulate_webhook.py --from +1555... --text "lat,lon [option]"  # simulate an inbound webhook against a local server, see README
 ```
 
 No linter/formatter is configured. No build step — this isn't packaged/distributed.
@@ -28,7 +29,11 @@ No linter/formatter is configured. No build step — this isn't packaged/distrib
 
 The webhook (`app/main.py`) therefore only ever *serves* already-verified numbers. Unregistered and unverified numbers are both silently ignored (no reply) — this is intentional so the endpoint's existence and verification-state aren't observable from the outside.
 
-**Weather lookup** (`app/weather.py`): NWS `api.weather.gov` first (US coordinates, includes active alerts, requires a descriptive `User-Agent` per `NWS_CONTACT` or NWS 403s), falling back to Open-Meteo (global, no key) when NWS doesn't cover the point. Both normalize to a short single-period text summary — replies are kept well under Apple's satellite-messaging-friendly length.
+**Weather lookup** (`app/weather.py`): NWS `api.weather.gov` first (US coordinates, includes active alerts, requires a descriptive `User-Agent` per `NWS_CONTACT` or NWS 403s), falling back to Open-Meteo (global, no key) when NWS doesn't cover the point. Both normalize to a short text summary — replies are kept well under Apple's satellite-messaging-friendly length (300 chars, enforced by `_truncate`).
+
+The incoming text can carry an optional trailing forecast option word, parsed by `parsing.parse_request()` (default/`forecast`/`tonight`/`tomorrow`; an unrecognized word makes the whole message invalid rather than silently falling back). The option only affects the NWS path — `_select_period()` picks the relevant period (`tonight` matches by name with a not-daytime fallback; `tomorrow` matches the next day's date against period `startTime` rather than assuming a fixed index, since which period is "tomorrow" shifts depending on time of day) and `get_forecast()` builds either the full `detailedForecast` (default/tonight/tomorrow) or a compact 3-period summary via `_period_line()`/`_period_summary()` (`forecast`). Open-Meteo ignores the option entirely and always returns its normal current-conditions summary — its response shape isn't set up to support per-period selection, and that was an explicit scope cut rather than an oversight.
+
+Because a `detailedForecast` (plus an active-alert prefix) can exceed 300 chars, `_try_nws()` falls back to the short compiled `_period_line()` form for that same period rather than splitting the reply across multiple messages — again, a deliberate simplicity choice for this scale, not a limitation to fix. `_shorten()` (case-insensitive `and` → `&`) is applied to both `shortForecast` and `detailedForecast` to buy back characters; don't assume NWS text is always Title Case when matching against it elsewhere.
 
 **Sendblue quirks baked into `app/sendblue.py`** (found the hard way, not documented consistently by Sendblue): `from_number` is required on every send call even on the free/shared tier; a contact must be created *and* opted in before it can receive anything; incoming webhook payload field names are inconsistent across Sendblue's own docs, so `extract_incoming()` defensively checks both `from_number`/`number` and `content`/`text`; real API calls can take ~20s, hence the 45s timeout on `send_message`.
 

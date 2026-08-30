@@ -72,6 +72,23 @@ uv run python cli.py list-numbers                          # list all registered
 uv run python cli.py revoke +15551234567                    # flip a number back to unverified
 ```
 
+## Local testing (without touching the Pi)
+
+`scripts/simulate_webhook.py` POSTs a correctly-signed, Sendblue-shaped payload straight at a locally running server — the same code path a real webhook hits (signature check, parsing, live weather lookup, DB logging, and a real outbound Sendblue send) — without touching the Pi or Sendblue's webhook config.
+
+```bash
+uv run uvicorn app.main:app --port 8000        # in one terminal
+
+# one-time: register + verify a test number in your *local* DB (hits real Sendblue)
+uv run python cli.py add-number +15551234567
+uv run python cli.py verify-number +15551234567
+
+# in another terminal
+uv run python scripts/simulate_webhook.py --from +15551234567 --text "47.6062,-122.3321 forecast"
+```
+
+The outbound reply is a real Sendblue send/iMessage to `--from`, so use a number you can read texts on.
+
 ## How it works
 
 **Verification (one-time per number, two layers, both admin-driven — no verification happens over the webhook):**
@@ -80,9 +97,20 @@ uv run python cli.py revoke +15551234567                    # flip a number back
 3. You run `verify-number` → this app's own OTP iMessage is sent, and the CLI prompts you for it right there in the terminal. You type in whatever code landed on the phone; a match flips the number to verified in our DB. This is deliberately not "reply via iMessage" — the property this step protects is "only whoever can run this CLI can add/verify numbers," which is enforced by CLI access (already local-only), not by who can text back from a given number.
 
 **Regular usage:**
-1. A verified number texts coordinates, e.g. `47.6062,-122.3321`.
+1. A verified number texts coordinates, e.g. `47.6062,-122.3321`, optionally followed by a forecast option word.
 2. The webhook parses them, fetches a forecast, and texts a short summary back.
 3. Anything from an unregistered number is silently ignored — the bot never reveals it exists to a random text.
+
+**Forecast options** (trailing word on the message, e.g. `47.6062,-122.3321 tonight`):
+
+| Option | Reply |
+|---|---|
+| *(none)* | Detailed forecast for the current period — the default, unchanged |
+| `forecast` | Compact summary of the next 3 periods: name, short forecast, temp, rain %, wind |
+| `tonight` | Detailed forecast for tonight |
+| `tomorrow` | Detailed forecast for tomorrow (day name resolved automatically) |
+
+These only work through NWS — falling back to Open-Meteo (non-US coordinates, or NWS unavailable) always returns the normal current-conditions summary regardless of the option requested. If a detailed forecast (plus any active alert) doesn't fit in 300 characters, it's swapped for the shorter compiled form instead of being split across multiple messages.
 
 ## Design
 
@@ -100,8 +128,8 @@ iPhone (satellite) ⇄ iMessage ⇄ Sendblue ⇄ [Cloudflare Tunnel] ⇄ FastAPI
 |---|---|
 | `main.py` | FastAPI app; the one public route, `POST /webhook/sendblue` |
 | `sendblue.py` | Sending messages, Sendblue contact creation/opt-in, webhook signature verification, payload parsing |
-| `weather.py` | `get_forecast(lat, lon)` — tries NWS first (US, includes active alerts), falls back to Open-Meteo (global, no key) |
-| `parsing.py` | Coordinate parsing (`lat,lon` or `lat lon`, decimal degrees, range-checked) |
+| `weather.py` | `get_forecast(lat, lon, option="default")` — tries NWS first (US, includes active alerts, supports the `forecast`/`tonight`/`tomorrow` options), falls back to Open-Meteo (global, no key, default summary only) |
+| `parsing.py` | Coordinate parsing (`lat,lon` or `lat lon`, decimal degrees, range-checked) plus an optional trailing forecast option word |
 | `otp.py` | 6-digit code generation, hashing, constant-time comparison |
 | `db.py` | Thin `sqlite3` wrapper — no ORM, this is small enough not to need one |
 | `config.py` | Loads and validates `.env` |
