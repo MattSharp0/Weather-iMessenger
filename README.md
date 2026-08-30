@@ -4,7 +4,7 @@ Text your coordinates via iMessage (including over satellite, when off-grid) and
 
 ## Prerequisites
 
-- Python 3.12+ and [`uv`](https://docs.astral.sh/uv/)
+- Python 3.11+ and [`uv`](https://docs.astral.sh/uv/)
 - A [Sendblue](https://sendblue.com) account (see "Why Sendblue" below) — the free tier works fine at this scale
 - Somewhere to run this that's reachable from the internet for the Sendblue webhook. A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) is the easiest no-port-forwarding option; a *named* tunnel (for a stable URL) needs a domain added to your Cloudflare account. A quick/anonymous tunnel works for initial testing but gets a new random URL on every restart and isn't reliable long-term — don't use it as your permanent webhook target.
 
@@ -52,7 +52,7 @@ Text your coordinates via iMessage (including over satellite, when off-grid) and
 
    This sends this app's own verification code and then prompts you for it right there in the terminal — like entering a 2FA code — rather than requiring a reply over iMessage. Read the code off whichever phone it landed on and type it in (3 attempts against that code before it asks you to re-run for a fresh one). Verification only completes once you enter it correctly; the number can't trigger weather lookups until then. If you jump ahead and run `verify-number` before the Sendblue opt-in is confirmed, it fails with a clear message telling you to wait/retry `add-number` rather than crashing.
 
-5. Run the server:
+5. Run the server (for local testing — see [Deployment notes](#deployment-notes) below for the production/systemd setup, which intentionally does *not* use `uv run`):
 
    ```bash
    uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -121,7 +121,7 @@ iPhone (satellite) ⇄ iMessage ⇄ Sendblue ⇄ [Cloudflare Tunnel] ⇄ FastAPI
 - `.env` and the SQLite file (which contains phone numbers and OTP hashes) aren't given special filesystem permissions beyond your umask — `chmod 600` both if you're on a shared machine.
 - MIT licensed — see [LICENSE](LICENSE).
 
-**Known open item:** Sendblue's own docs/blog examples disagree on the exact *incoming webhook* payload field names (`from_number` vs `number`). `sendblue.extract_incoming()` checks both, but this should be confirmed against your first real incoming webhook — worth logging the raw payload once and double-checking. (Separately, on the *outgoing* send call, `from_number` turned out to be required even on the free/shared tier despite docs suggesting otherwise — already fixed, see `SENDBLUE_FROM_NUMBER` above. Also note real Sendblue API calls can take ~20s, so `sendblue.send_message()` uses a 45s timeout, not a short one.)
+**Notes from getting this actually working end-to-end in production:** Sendblue's own docs/blog examples disagreed on the exact *incoming webhook* payload field names (`from_number` vs `number`) — `sendblue.extract_incoming()` checks both, and this has now been confirmed working against real inbound iMessages. On the *outgoing* send call, `from_number` turned out to be required even on the free/shared tier despite docs suggesting otherwise (see `SENDBLUE_FROM_NUMBER` above), and real Sendblue API calls can take ~20s, so `sendblue.send_message()` uses a 45s timeout rather than a short one. Separately: if the webhook seems to receive nothing at all despite Sendblue showing the message in their own chat UI, see the Cloudflare Bot Fight Mode note under Deployment below — that was the actual root cause the one time this happened, not anything Sendblue- or app-side.
 
 ## Deployment notes
 
@@ -142,4 +142,4 @@ iPhone (satellite) ⇄ iMessage ⇄ Sendblue ⇄ [Cloudflare Tunnel] ⇄ FastAPI
 uv run pytest
 ```
 
-Currently covers coordinate parsing (`tests/test_parsing.py`). The webhook flow (OTP verification, weather requests, unregistered-number handling, bad-signature rejection) has been exercised manually against a live NWS/Open-Meteo backend with Sendblue's send call mocked — see the plan doc for the full scenario list if you want to turn that into an automated suite.
+Currently covers coordinate parsing (`tests/test_parsing.py`) as automated tests. The full flow — CLI onboarding, webhook auth, coordinate parsing, live NWS/Open-Meteo lookups, and Sendblue delivery — has been validated end-to-end in production (real iMessages, real replies), plus exercised manually in mocked form during development; see the plan doc for the full scenario list if you want to turn that into an automated suite.
