@@ -16,6 +16,8 @@ async def sendblue_webhook(
     sb_signing_secret: str | None = Header(default=None, alias="sb-signing-secret"),
 ) -> Response:
     if not sendblue.verify_signature(sb_signing_secret):
+        # TEMPORARY diagnostic — remove once the real header name/value is confirmed.
+        logger.warning("401: received headers were: %s", dict(request.headers))
         return Response(status_code=401)
 
     payload = await request.json()
