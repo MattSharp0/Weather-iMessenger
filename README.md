@@ -119,7 +119,7 @@ iPhone (satellite) ⇄ iMessage ⇄ Sendblue ⇄ [Cloudflare Tunnel] ⇄ FastAPI
 - No rate limiting on the webhook. In practice it's gated by the shared signing secret (Sendblue is the only party that can produce a valid one) rather than app-level throttling — acceptable for a personal-scale bot, not for anything higher-traffic.
 - Single-tenant by design: there's no user/org model, just a flat list of phone numbers one admin controls via the CLI. Don't expose the CLI or the SQLite file to anyone you don't want able to add/revoke numbers.
 - `.env` and the SQLite file (which contains phone numbers and OTP hashes) aren't given special filesystem permissions beyond your umask — `chmod 600` both if you're on a shared machine.
-- No license file yet — add one (MIT, Apache-2.0, etc.) before treating this as usable by others; without one, default copyright applies and technically no one else has permission to use it despite the repo being public.
+- MIT licensed — see [LICENSE](LICENSE).
 
 **Known open item:** Sendblue's own docs/blog examples disagree on the exact *incoming webhook* payload field names (`from_number` vs `number`). `sendblue.extract_incoming()` checks both, but this should be confirmed against your first real incoming webhook — worth logging the raw payload once and double-checking. (Separately, on the *outgoing* send call, `from_number` turned out to be required even on the free/shared tier despite docs suggesting otherwise — already fixed, see `SENDBLUE_FROM_NUMBER` above. Also note real Sendblue API calls can take ~20s, so `sendblue.send_message()` uses a 45s timeout, not a short one.)
 
