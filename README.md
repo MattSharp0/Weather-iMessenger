@@ -129,6 +129,12 @@ iPhone (satellite) ⇄ iMessage ⇄ Sendblue ⇄ [Cloudflare Tunnel] ⇄ FastAPI
 - Run under systemd so it survives a reboot; point the unit at `uv run uvicorn app.main:app --host 0.0.0.0 --port <port>`.
 - Sendblue's free tier uses a shared number — fine at this scale (a handful of verified senders); a dedicated line is $100/mo if you ever want guaranteed inbound-first delivery.
 
+**Running on a first-gen Raspberry Pi Zero (ARMv6)?** Both `uv`'s managed Python builds and `cloudflared`'s official releases only target ARMv7+/ARM64 — neither works out of the box on genuine ARMv6 (the Pi Zero 2 W is ARMv7 and unaffected by any of this). If you're on the original Zero:
+- **Python**: use the system-installed interpreter instead of letting `uv` try to download one (`requires-python = ">=3.11"` in `pyproject.toml` already reflects this — don't tighten it back to an exact 3.12 pin, since `uv python install` has no ARMv6 build to fetch).
+- **`cloudflared`**: cross-compile it yourself — it's open-source Go, so `CGO_ENABLED=0 make cloudflared TARGET_OS=linux TARGET_ARCH=arm TARGET_ARM=6` from a released tag produces a working ARMv6 binary. Official releases crash with "illegal instruction."
+- **`pydantic-core`** (a `fastapi`/`pydantic` dependency): it's a Rust extension with no ARMv6 wheel on PyPI, so a plain `uv sync` will try to compile it from source — extremely slow and memory-risky on 512MB, single-core hardware. [piwheels.org](https://www.piwheels.org) hosts prebuilt ARMv6 wheels for it, but getting `uv` to consistently prefer piwheels for just this one package without disturbing the rest of the (PyPI-based, macOS-compatible) lockfile proved fragile in practice — `--default-index` swaps the index globally for every package, and `[tool.uv.sources]` package-pinning to an `explicit` index didn't take effect as documented. The workaround that actually worked: run `uv lock --default-index https://www.piwheels.org/simple` directly on the Pi (regenerating a Pi-local lock, not committed back to the repo) whenever a fresh `.venv` build is needed there, then `uv sync`. Treat this as a standing manual step for this specific hardware, not something baked into the shared `pyproject.toml`/`uv.lock`.
+- Drop the `uvicorn[standard]` extras (`uvloop`, `httptools`, `watchfiles`, `websockets`) — none of them matter at this traffic volume, and `uvloop`/`httptools` are C extensions with the same no-ARMv6-wheel problem. Plain `uvicorn` is pure Python.
+
 ## Tests
 
 ```bash
