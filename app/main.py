@@ -51,15 +51,18 @@ async def sendblue_webhook(
 
 
 def _handle_weather_request(conn, phone_row, content: str) -> None:
-    coords = parsing.parse_coordinates(content)
+    parsed = parsing.parse_request(content)
 
-    if coords is None:
-        reply = "Send coordinates as 'lat,lon', e.g. 47.6062,-122.3321"
+    if parsed is None:
+        reply = (
+            "Send coordinates as 'lat,lon', e.g. 47.6062,-122.3321 "
+            "(optionally add forecast/tonight/tomorrow)"
+        )
         sendblue.send_message(phone_row["phone_number"], reply)
         db.log_message(conn, phone_row["id"], "outbound", "other", reply)
         return
 
-    lat, lon = coords
+    lat, lon, option = parsed
     conn.execute(
         "UPDATE messages SET message_type = 'weather_request', parsed_lat = ?, parsed_lon = ? "
         "WHERE id = (SELECT MAX(id) FROM messages WHERE phone_number_id = ?)",
@@ -67,7 +70,7 @@ def _handle_weather_request(conn, phone_row, content: str) -> None:
     )
 
     try:
-        reply = weather.get_forecast(lat, lon)
+        reply = weather.get_forecast(lat, lon, option)
     except Exception:
         logger.exception("Weather lookup failed for %s,%s", lat, lon)
         reply = "Sorry, couldn't fetch a forecast for that location right now."
