@@ -44,7 +44,7 @@ Text your coordinates via iMessage (including over satellite, when off-grid) and
    uv run python cli.py add-number +15551234567 --label me
    ```
 
-   This creates the Sendblue contact and triggers *Sendblue's own* opt-in verification text to that number. Reply to that text first — until Sendblue considers the number opted in, it will reject anything we try to send it, including our own code. Once that's confirmed:
+   This creates the Sendblue contact, but Sendblue's own opt-in is *inbound-first* — there's no API call that makes Sendblue text the recipient. **They have to text your Sendblue number themselves first** (any message; find your number via `GET /api/lines`, see below). Once Sendblue's dashboard shows them as verified/opted in:
 
    ```bash
    uv run python cli.py verify-number +15551234567
@@ -66,7 +66,7 @@ The CLI is admin-only tooling — run it locally, never expose it to the network
 
 ```bash
 uv run python cli.py init-db                             # create the SQLite DB from schema.sql
-uv run python cli.py add-number +15551234567 --label me  # register a number, trigger Sendblue's opt-in text
+uv run python cli.py add-number +15551234567 --label me  # register a number and create the Sendblue contact
 uv run python cli.py verify-number +15551234567            # send this app's OTP, prompt for it inline (2FA-style)
 uv run python cli.py list-numbers                          # list all registered numbers + status
 uv run python cli.py revoke +15551234567                    # flip a number back to unverified
@@ -92,8 +92,8 @@ The outbound reply is a real Sendblue send/iMessage to `--from`, so use a number
 ## How it works
 
 **Verification (one-time per number, two layers, both admin-driven — no verification happens over the webhook):**
-1. You run `add-number` for a number you trust → row inserted, Sendblue contact created, Sendblue's own opt-in text sent.
-2. They reply to *that* text (per Sendblue's own flow — this app has no visibility into it).
+1. You run `add-number` for a number you trust → row inserted, Sendblue contact created.
+2. They text your Sendblue number first (per Sendblue's own inbound-first opt-in flow — this app has no visibility into it, and there's no API call that makes Sendblue initiate contact instead).
 3. You run `verify-number` → this app's own OTP iMessage is sent, and the CLI prompts you for it right there in the terminal. You type in whatever code landed on the phone; a match flips the number to verified in our DB. This is deliberately not "reply via iMessage" — the property this step protects is "only whoever can run this CLI can add/verify numbers," which is enforced by CLI access (already local-only), not by who can text back from a given number.
 
 **Regular usage:**
@@ -149,7 +149,7 @@ iPhone (satellite) ⇄ iMessage ⇄ Sendblue ⇄ [Cloudflare Tunnel] ⇄ FastAPI
 - `.env` and the SQLite file (which contains phone numbers and OTP hashes) aren't given special filesystem permissions beyond your umask — `chmod 600` both if you're on a shared machine.
 - MIT licensed — see [LICENSE](LICENSE).
 
-**Notes from getting this actually working end-to-end in production:** Sendblue's own docs/blog examples disagreed on the exact *incoming webhook* payload field names (`from_number` vs `number`) — `sendblue.extract_incoming()` checks both, and this has now been confirmed working against real inbound iMessages. On the *outgoing* send call, `from_number` turned out to be required even on the free/shared tier despite docs suggesting otherwise (see `SENDBLUE_FROM_NUMBER` above), and real Sendblue API calls can take ~20s, so `sendblue.send_message()` uses a 45s timeout rather than a short one. Separately: if the webhook seems to receive nothing at all despite Sendblue showing the message in their own chat UI, see the Cloudflare Bot Fight Mode note under Deployment below — that was the actual root cause the one time this happened, not anything Sendblue- or app-side.
+**Notes from getting this actually working end-to-end in production:** Sendblue's own docs/blog examples disagreed on the exact *incoming webhook* payload field names (`from_number` vs `number`) — `sendblue.extract_incoming()` checks both, and this has now been confirmed working against real inbound iMessages. On the *outgoing* send call, `from_number` turned out to be required even on the free/shared tier despite docs suggesting otherwise (see `SENDBLUE_FROM_NUMBER` above), and real Sendblue API calls can take ~20s, so `sendblue.send_message()` uses a 45s timeout rather than a short one. Separately: if the webhook seems to receive nothing at all despite Sendblue showing the message in their own chat UI, see the Cloudflare Bot Fight Mode note under Deployment below — that was the actual root cause the one time this happened, not anything Sendblue- or app-side. Also: their own `POST /v2/contacts/verify` endpoint looks like a "send the recipient an opt-in text" trigger from its name, but it isn't — it returns "no contact found" until the recipient has *already* opted in by texting your Sendblue number themselves, at which point it's a no-op. This app doesn't call it; the recipient just has to text in first, confirmed via Sendblue's own web portal.
 
 ## Deployment notes
 

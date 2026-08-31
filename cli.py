@@ -2,6 +2,7 @@ import argparse
 import sys
 
 from app import db, otp, sendblue
+from app.config import config
 
 
 def cmd_init_db(args: argparse.Namespace) -> None:
@@ -23,21 +24,11 @@ def cmd_add_number(args: argparse.Namespace) -> None:
     except sendblue.SendblueError as e:
         print(f"(create_contact: {e} — continuing, likely already exists)")
 
-    try:
-        sendblue.request_contact_verification(args.phone_number)
-    except sendblue.SendblueError as e:
-        print(f"Sendblue rejected the verification request: {e}", file=sys.stderr)
-        print(
-            "This usually means the number couldn't be validated as a real "
-            "mobile line — double check it's correct and try again.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     print(
-        f"\nSendblue sent its own opt-in verification text to {args.phone_number}.\n"
-        "That must be answered first — Sendblue won't let us send anything else\n"
-        "(including our own code) until they do. Once it's confirmed, run:\n"
+        f"\nSendblue won't let us message {args.phone_number} until Sendblue itself\n"
+        "considers them opted in — and that opt-in is inbound-first: THEY have to\n"
+        f"text {config.sendblue_from_number} first (any message), not the other way\n"
+        "around. Once Sendblue's dashboard shows them verified, run:\n"
         f"  uv run python cli.py verify-number {args.phone_number}"
     )
 

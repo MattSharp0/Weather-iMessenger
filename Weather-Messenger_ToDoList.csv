@@ -4,3 +4,4 @@ Id,Item,IsComplete,CreatedDate
 3,Improve weather truncation,false,2026-08-30
 4,Test with additional phone numbers,false,2026-08-30
 5,Test via satellite,false,2026-08-30
+6,"Fix Sendblue opt-in flow docs/code: request_contact_verification docstring, CLAUDE.md, and add-number's console message all assume Sendblue sends an outbound opt-in text the recipient replies to. Actual flow (found troubleshooting Haley's number, +17134099853) is inbound-first: contact must be created with first/last name (>=2 chars) then text OUR Sendblue number themselves before they show verified in the portal / before cli.py verify-number will work.",true,2026-08-30
