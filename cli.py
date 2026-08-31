@@ -50,8 +50,9 @@ def cmd_verify_number(args: argparse.Namespace) -> None:
             if "must be verified" in str(e).lower():
                 print(
                     f"Sendblue rejected the send: {e}\n"
-                    f"Run 'add-number {row['phone_number']}' first (or wait for them to "
-                    "answer Sendblue's opt-in text), then retry this command.",
+                    f"Run 'add-number {row['phone_number']}' first if you haven't, then have "
+                    f"them text {config.sendblue_from_number} — Sendblue's opt-in only "
+                    "completes once they message us first, then retry this command.",
                     file=sys.stderr,
                 )
                 sys.exit(1)
