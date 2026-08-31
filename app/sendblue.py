@@ -35,18 +35,15 @@ def send_message(to_number: str, content: str) -> None:
 
 
 def create_contact(number: str) -> None:
-    """Register `number` as a Sendblue contact. Required before it can be messaged at all."""
-    _post("/v2/contacts", {"number": number})
+    """Register `number` as a Sendblue contact. Required before it can be messaged at all.
 
-
-def request_contact_verification(number: str) -> None:
-    """Trigger Sendblue's own opt-in verification text to `number`.
-
-    The recipient must respond to that message before Sendblue will allow any
-    further messages to them (including our own OTP) — separate from and
-    prior to this app's own OTP verification step.
+    This does NOT trigger Sendblue's own opt-in — that's inbound-first: the
+    recipient has to text `config.sendblue_from_number` themselves before
+    Sendblue considers them opted in (confirmed via their web portal; there's
+    no API call that makes Sendblue text them first). Nothing else we send
+    them, including our own OTP, will go through until they do.
     """
-    _post("/v2/contacts/verify", {"number": number})
+    _post("/v2/contacts", {"number": number})
 
 
 def verify_signature(header_secret: str | None) -> bool:
